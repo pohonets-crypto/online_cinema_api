@@ -1,4 +1,4 @@
-from validation.profile import (
+from online_cinema.validation.profile import (
     validate_name,
     validate_image,
     validate_gender,

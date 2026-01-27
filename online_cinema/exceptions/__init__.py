@@ -1,10 +1,10 @@
-from exceptions.security import (
+from online_cinema.exceptions.security import (
     BaseSecurityError,
     InvalidTokenError,
     TokenExpiredError
 )
-from exceptions.email import BaseEmailError
-from exceptions.storage import (
+from online_cinema.exceptions.email import BaseEmailError
+from online_cinema.exceptions.storage import (
     BaseS3Error,
     S3ConnectionError,
     S3BucketNotFoundError,

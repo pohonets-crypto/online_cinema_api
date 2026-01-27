@@ -1,16 +1,14 @@
-from database.models.accounts import UserProfileModel, UserModel
+from online_cinema.database.models.accounts import UserProfileModel, UserModel
 
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import get_s3_storage_client
-from database import get_db
-from exceptions import TokenExpiredError, InvalidTokenError
+from online_cinema.database.engine import get_db
+from online_cinema.exceptions import TokenExpiredError, InvalidTokenError
 
-from schemas.profiles import ProfileResponseSchema, ProfileRequestSchema
-from storages import S3StorageInterface
-from security.token_manager import decode_access_token
+from online_cinema.schemas.profiles import ProfileResponseSchema, ProfileRequestSchema
+from online_cinema.security.token_manager import JWTAuthManager
 
 
 router = APIRouter()
@@ -25,7 +23,6 @@ async def create_profile(
         profile_data: ProfileRequestSchema,
         authorization: str = Header(None),
         db: AsyncSession = Depends(get_db),
-        s3_client: S3StorageInterface = Depends(get_s3_storage_client),
 ):
     if not authorization:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED
@@ -35,7 +32,7 @@ async def create_profile(
                             detail="Invalid Authorization header format. Expected 'Bearer <token>'")
     token = authorization.split(" ")[1]
     try:
-        payload = decode_access_token(token)
+        payload = JWTAuthManager.decode_access_token(token)
     except TokenExpiredError:
         raise HTTPException(status_code=401, detail="Token has expired.")
     except InvalidTokenError:
@@ -58,15 +55,7 @@ async def create_profile(
         raise HTTPException(status_code=400, detail="User already has a profile.")
 
     avatar_url = None
-    if profile_data.avatar:
-        try:
-            avatar_url = await s3_client.upload_file(
-                file_bytes=profile_data.avatar,
-                file_name=f"{user_id}_avatar.jpg",
-                folder="avatars"
-            )
-        except Exception:
-            raise HTTPException(status_code=500, detail="Failed to upload avatar. Please try again later.")
+
 
     new_profile = UserProfileModel(
         user_id=user_id,

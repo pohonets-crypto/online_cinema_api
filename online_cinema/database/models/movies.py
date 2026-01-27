@@ -61,10 +61,10 @@ class StarsModel(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
 
-    stars: Mapped[list["MovieModel"]] = relationship(
+    movies = relationship(
         "MovieModel",
         secondary=MovieStarsModel,
-        back_populates="stars",
+        back_populates="stars"
     )
 
 
@@ -74,12 +74,11 @@ class DirectorModel(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
 
-    directors: Mapped[list["MovieModel"]] = relationship(
+    movies = relationship(
         "MovieModel",
         secondary=MovieDirectorsModel,
-        back_populates="directors",
+        back_populates="directors"
     )
-
 
 class CertificationModel(Base):
     __tablename__ = "certifications"
@@ -89,7 +88,7 @@ class CertificationModel(Base):
 
     movies: Mapped[list["MovieModel"]] = relationship(
         "MovieModel",
-        back_populates="certifications",
+        back_populates="certification",
     )
 
 
@@ -138,3 +137,7 @@ class MovieModel(Base):
         UniqueConstraint("name", "year", "time",
                          name="uq_movie_name_year_time"),
     )
+
+    @classmethod
+    def default_order_by(cls):
+        return (cls.year.desc(),)

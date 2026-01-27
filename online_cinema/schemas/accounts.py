@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, field_validator
 
-from database import accounts_validators
+from online_cinema.database import accounts_validators
 
 
 class BaseEmailPasswordSchema(BaseModel):
