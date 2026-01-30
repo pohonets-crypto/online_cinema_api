@@ -12,8 +12,9 @@ from sqlalchemy import (
     func,
     Text,
     Date,
-    UniqueConstraint
+    UniqueConstraint, select
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import (
     Mapped,
     mapped_column,
@@ -64,7 +65,9 @@ class UserModel(Base):
     )
 
     group_id: Mapped[int] = mapped_column(ForeignKey("user_groups.id", ondelete="CASCADE"), nullable=False)
-    group: Mapped["UserGroupModel"] = relationship("UserGroupModel", back_populates="users")
+    group: Mapped["UserGroupModel"] = relationship("UserGroupModel",
+                                                   back_populates="users",
+                                                   lazy="selectin")
 
     activation_token: Mapped[Optional["ActivationTokenModel"]] = relationship(
         "ActivationTokenModel",
@@ -89,10 +92,24 @@ class UserModel(Base):
     profile: Mapped[Optional["UserProfileModel"]] = relationship(
         "UserProfileModel",
         back_populates="user",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        lazy="selectin"
+
     )
+    movie_ratings = relationship("MovieRatingModel", back_populates="user")
+    movie_likes = relationship("MovieLikeModel", back_populates="user")
+    favorite_movies = relationship(
+        "MovieModel",
+        secondary="favorite_movies",
+        back_populates="favorited_by"
+    )
+    comments = relationship("MovieCommentModel", back_populates="user")
+    notifications = relationship("NotificationModel", back_populates="user")
 
     def has_group(self, group_name: UserGroupEnum) -> bool:
+
+        if not self.group:
+            return False
         return self.group.name == group_name
 
     @classmethod
@@ -156,6 +173,7 @@ class TokenBaseModel(Base):
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
+        default=lambda: datetime.now(timezone.utc) + timedelta(hours=24)
     )
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -181,12 +199,6 @@ class RefreshTokenModel(TokenBaseModel):
     __tablename__ = "refresh_tokens"
 
     user: Mapped[UserModel] = relationship("UserModel", back_populates="refresh_tokens")
-    token: Mapped[str] = mapped_column(
-        String(255),
-        unique=True,
-        nullable=False,
-        default=generate_secure_token
-    )
 
     @classmethod
     def create(cls, user_id: int | Mapped[int], days_valid: int, token: str) -> "RefreshTokenModel":

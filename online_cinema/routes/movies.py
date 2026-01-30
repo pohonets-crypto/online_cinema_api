@@ -2,22 +2,36 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import selectinload
+from online_cinema.routes.accounts import get_current_user
 
+from online_cinema.database.models.accounts import UserModel, UserGroupEnum
 from online_cinema.database.engine import get_db
 from online_cinema.database.models.movies import (
     MovieModel,
     StarsModel,
     GenreModel,
     DirectorModel,
-    CertificationModel
+    CertificationModel,
+    MovieRatingModel,
+    MovieLikeModel,
+    FavoriteMovieModel,
+    MovieCommentModel,
+    MoviePurchaseModel
 )
 from online_cinema.schemas import (
     MovieListResponseSchema,
     MovieListItemSchema,
     MovieDetailSchema
 )
-from online_cinema.schemas.movies import MovieCreateSchema, MovieUpdateSchema
+from online_cinema.schemas.movies import (MovieCreateSchema,
+                                          MovieUpdateSchema,
+                                          MovieCommentSchema,
+                                          MovieLikeSchema,
+                                          MovieRatingSchema,
+                                          MovieRatingCreateSchema,
+                                          MovieLikeCreateSchema,
+                                          MovieCommentCreateSchema)
 
 router = APIRouter()
 
@@ -59,7 +73,7 @@ async def get_movie_list(
         raise HTTPException(status_code=404, detail="No movies found.")
 
     order_by = MovieModel.default_order_by()
-    stmt = select(MovieModel)
+    stmt = select(MovieModel).options(selectinload(MovieModel.certification))
     if order_by:
         stmt = stmt.order_by(*order_by)
 
@@ -110,8 +124,12 @@ async def get_movie_list(
 )
 async def create_movie(
     movie_data: MovieCreateSchema,
+    current_user: UserModel = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> MovieDetailSchema:
+
+    if not current_user.has_group(UserGroupEnum.MODERATOR):
+        raise HTTPException(403, "Forbidden")
 
     exists = await db.scalar(
         select(func.count())
@@ -183,9 +201,19 @@ async def create_movie(
 
     db.add(movie)
     await db.commit()
-    await db.refresh(
-        movie, ["genres", "directors", "stars", "certification"]
+    stmt = (
+        select(MovieModel)
+        .options(
+            selectinload(MovieModel.certification),
+            selectinload(MovieModel.genres),
+            selectinload(MovieModel.directors),
+            selectinload(MovieModel.stars),
+        )
+        .where(MovieModel.id == movie.id)
     )
+
+    result = await db.execute(stmt)
+    movie = result.scalars().one()
 
     return MovieDetailSchema.model_validate(movie)
 
@@ -214,20 +242,16 @@ async def get_movie_by_id(
         movie_id: int,
         db: AsyncSession = Depends(get_db),
 ) -> MovieDetailSchema:
-
-    stmt = (
-        select(MovieModel)
-        .options(
-            joinedload(MovieModel.certification),
-            joinedload(MovieModel.genres),
-            joinedload(MovieModel.directors),
-            joinedload(MovieModel.stars),
-        )
-        .where(MovieModel.id == movie_id)
-    )
-
-    result = await db.execute(stmt)
-    movie = result.scalars().first()
+    stmt = select(MovieModel).options(
+        selectinload(MovieModel.genres),
+        selectinload(MovieModel.directors),
+        selectinload(MovieModel.stars),
+        selectinload(MovieModel.certification),
+        selectinload(MovieModel.ratings),
+        selectinload(MovieModel.comments),
+        selectinload(MovieModel.likes)
+    ).where(MovieModel.id == movie_id)
+    movie = (await db.execute(stmt)).scalars().first()
 
     if not movie:
         raise HTTPException(
@@ -274,6 +298,17 @@ async def delete_movie(
         raise HTTPException(
             status_code=404,
             detail="Movie with the given ID was not found."
+        )
+    purchased = await db.scalar(
+        select(func.count())
+        .select_from(MoviePurchaseModel)
+        .where(MoviePurchaseModel.movie_id == movie_id)
+    )
+
+    if purchased:
+        raise HTTPException(
+            status_code=400,
+            detail="Movie cannot be deleted because it was purchased"
         )
 
     await db.delete(movie)
@@ -330,9 +365,118 @@ async def update_movie(
 
     try:
         await db.commit()
-        await db.refresh(movie)
+        return {"detail": "Movie updated successfully."}
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=400, detail="Invalid input data.")
 
-    return {"detail": "Movie updated successfully."}
+@router.post("/movies/{movie_id}/rate/", response_model=MovieRatingSchema)
+async def rate_movie(movie_id: int,
+                     data: MovieRatingCreateSchema,
+                     current_user: UserModel = Depends(get_current_user),
+                     db: AsyncSession = Depends(get_db)):
+    rating = data.rating
+    if rating < 1 or rating > 10:
+        raise HTTPException(status_code=400, detail="Rating must be 1-10")
+    stmt = select(MovieRatingModel).where(
+        MovieRatingModel.user_id == current_user.id,
+        MovieRatingModel.movie_id == movie_id
+    )
+    existing = (await db.execute(stmt)).scalars().first()
+    if existing:
+        existing.rating = rating
+    else:
+        db.add(MovieRatingModel(user_id=current_user.id, movie_id=movie_id, rating=rating))
+    await db.commit()
+    return {"movie_id": movie_id, "rating": rating}
+
+@router.post("/movies/{movie_id}/like/", response_model=MovieLikeSchema)
+async def like_movie(movie_id: int,
+                     data: MovieLikeCreateSchema,
+                     current_user: UserModel = Depends(get_current_user),
+                     db: AsyncSession = Depends(get_db)):
+    like = data.like
+    stmt = select(MovieLikeModel).where(
+        MovieLikeModel.user_id == current_user.id,
+        MovieLikeModel.movie_id == movie_id
+    )
+    existing = (await db.execute(stmt)).scalars().first()
+    if existing:
+        existing.is_like = like
+    else:
+        db.add(MovieLikeModel(user_id=current_user.id, movie_id=movie_id, is_like=like))
+    await db.commit()
+    return {"movie_id": movie_id, "is_like": like}
+
+@router.post("/movies/{movie_id}/favorite/")
+async def add_favorite(movie_id: int, current_user: UserModel = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    stmt = select(FavoriteMovieModel).where(
+        FavoriteMovieModel.user_id == current_user.id,
+        FavoriteMovieModel.movie_id == movie_id
+    )
+    exists = (await db.execute(stmt)).scalars().first()
+    if not exists:
+        db.add(FavoriteMovieModel(user_id=current_user.id, movie_id=movie_id))
+        await db.commit()
+    return {"movie_id": movie_id, "favorited": True}
+
+@router.delete("/movies/{movie_id}/favorite/")
+async def remove_favorite(movie_id: int, current_user: UserModel = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    stmt = select(FavoriteMovieModel).where(
+        FavoriteMovieModel.user_id == current_user.id,
+        FavoriteMovieModel.movie_id == movie_id
+    )
+    fav = (await db.execute(stmt)).scalars().first()
+    if fav:
+        await db.delete(fav)
+        await db.commit()
+    return {"movie_id": movie_id, "favorited": False}
+
+
+@router.post("/movies/{movie_id}/comment/", response_model=MovieCommentSchema)
+async def add_comment(
+        movie_id: int,
+        data: MovieCommentCreateSchema,
+        current_user: UserModel = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db)
+):
+
+    comment = MovieCommentModel(
+        user_id=current_user.id,
+        movie_id=movie_id,
+        text=data.text,
+        parent_id=data.parent_id
+    )
+
+    db.add(comment)
+    await db.commit()
+
+    stmt = (
+        select(MovieCommentModel)
+        .options(
+            selectinload(MovieCommentModel.replies),
+        )
+        .where(MovieCommentModel.id == comment.id)
+    )
+
+    result = await db.execute(stmt)
+    comment_with_data = result.scalar_one()
+
+    return comment_with_data
+
+@router.post("/movies/{movie_id}/purchase/")
+async def purchase_movie(movie_id: int, current_user: UserModel = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    stmt = select(MoviePurchaseModel).where(
+        MoviePurchaseModel.user_id == current_user.id,
+        MoviePurchaseModel.movie_id == movie_id
+    )
+    exists = (await db.execute(stmt)).scalars().first()
+    movie = await db.get(MovieModel, movie_id)
+    if not movie:
+        raise HTTPException(404, "Movie not found")
+    if exists:
+        return {"purchased": True}
+    purchase = MoviePurchaseModel(user_id=current_user.id, movie_id=movie_id)
+    db.add(purchase)
+    await db.commit()
+    return {"purchased": True}

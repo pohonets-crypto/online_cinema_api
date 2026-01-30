@@ -1,4 +1,7 @@
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
 from online_cinema.routes import (
     movie_router,
     accounts_router,

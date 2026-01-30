@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends, status, HTTPException, BackgroundTasks
 from sqlalchemy import select, delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from online_cinema.security.token_manager import JWTAuthManager
 
 from online_cinema.config import (get_jwt_auth_manager,
                     get_settings,
@@ -38,7 +43,27 @@ from online_cinema.security.interfaces import JWTAuthManagerInterface
 
 router = APIRouter()
 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db)
+) -> UserModel:
+    try:
+        payload = JWTAuthManager.decode_access_token(token)
+        user_id: int = payload.get("user_id")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+    stmt = select(UserModel).options(selectinload(UserModel.group)).where(UserModel.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return user
 @router.post(
     "/register/",
     response_model=UserRegistrationResponseSchema,
@@ -100,21 +125,20 @@ async def register_user(
             group_id=user_group.id,
         )
         db.add(new_user)
+
+        token_obj = ActivationTokenModel(user_id=new_user.id)
+        db.add(token_obj)
+
         await db.flush()
 
-        activation_token = ActivationTokenModel(user_id=new_user.id)
-        db.add(activation_token)
-
         await db.commit()
-        await db.refresh(new_user)
-
-        activation_link = f"http://localhost/accounts/activate/{activation_token}/"
-
-        background_tasks.add_task(
-            email_sender.send_registration_email,
-            str(new_user.email),
-            activation_link,
+        final_stmt = (
+            select(UserModel)
+            .options(selectinload(UserModel.group))  # Підвантажуємо групу для схеми
+            .where(UserModel.id == new_user.id)
         )
+        final_result = await db.execute(final_stmt)
+        user_for_response = final_result.scalar_one()
 
     except SQLAlchemyError as e:
         await db.rollback()
@@ -123,7 +147,13 @@ async def register_user(
             detail="An error occurred during user creation."
         ) from e
     else:
-        return UserRegistrationResponseSchema.model_validate(new_user)
+        activation_link = "http://127.0.0.1/accounts/activate/"
+
+        await email_sender.send_activation_email(
+            new_user.email,
+            activation_link
+        )
+        return UserRegistrationResponseSchema.model_validate(user_for_response)
 
 
 @router.post(
@@ -197,11 +227,10 @@ async def activate_account(
     await db.delete(token_record)
     await db.commit()
 
-    login_link = "http://localhost/accounts/login/"
+    login_link = "http://127.0.0.1/accounts/login/"
 
-    background_tasks.add_task(
-        email_sender.send_activation_email,
-        str(user.email),
+    await email_sender.send_activation_complete_email(
+        str(activation_data.email),
         login_link
     )
 
@@ -241,12 +270,11 @@ async def request_password_reset_token(
     await db.commit()
     await db.refresh(reset_token)
 
-    reset_link = f"http://localhost/accounts/reset-password/?token={reset_token.token}"
+    password_reset_complete_link = "http://127.0.0.1/accounts/password-reset-complete/"
 
-    background_tasks.add_task(
-        email_sender.send_password_reset_email,
-        str(user.email),
-        reset_link
+    await email_sender.send_password_reset_email(
+        str(data.email),
+        password_reset_complete_link
     )
 
     return MessageResponseSchema(
@@ -337,16 +365,8 @@ async def reset_password(
 
     try:
         user.password = data.password
-        await db.run_sync(lambda s: s.delete(token_record))
+        await db.delete(token_record)
         await db.commit()
-
-        completion_link = "http://localhost/accounts/login/"
-
-        background_tasks.add_task(
-            email_sender.send_password_reset_complete_email,
-            str(user.email),
-            completion_link
-        )
 
     except SQLAlchemyError:
         await db.rollback()
@@ -354,6 +374,12 @@ async def reset_password(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while resetting the password."
         )
+    login_link = "http://127.0.0.1/accounts/login/"
+
+    await email_sender.send_password_reset_complete_email(
+        str(data.email),
+        login_link
+    )
 
     return MessageResponseSchema(message="Password reset successfully.")
 

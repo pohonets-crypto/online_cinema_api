@@ -135,3 +135,50 @@ class MovieUpdateSchema(BaseModel):
     model_config = {
         "from_attributes": True,
     }
+
+
+class MovieRatingSchema(BaseModel):
+    movie_id: int
+    rating: int = Field(..., ge=1, le=10)
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+class MovieRatingCreateSchema(BaseModel):
+    rating: int = Field(ge=1, le=10)
+
+
+class MovieLikeSchema(BaseModel):
+    movie_id: int
+    is_like: bool
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+class MovieLikeCreateSchema(BaseModel):
+    is_like: bool
+
+
+class MovieCommentSchema(BaseModel):
+    id: int
+    user_id: int
+    movie_id: int
+    text: str
+    parent_id: Optional[int] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    replies: List["MovieCommentSchema"] = []
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+class MovieCommentCreateSchema(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    parent_id: int | None = None

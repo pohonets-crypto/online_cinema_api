@@ -68,6 +68,8 @@ async def create_profile(
     )
     db.add(new_profile)
     await db.commit()
-    await db.refresh(new_profile)
+    stmt = select(UserProfileModel).where(UserProfileModel.user_id == user_id)
+    result = await db.execute(stmt)
+    profile = result.scalar_one()
 
-    return ProfileResponseSchema.model_validate(new_profile)
+    return profile
