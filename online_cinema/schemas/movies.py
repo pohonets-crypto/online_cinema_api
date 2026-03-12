@@ -44,9 +44,10 @@ class MovieBaseSchema(BaseModel):
     gross: Optional[float] = None
     description: str = Field(...)
     price: decimal.Decimal = Field(...)
-    certification_id: int = Field(...)
+    certification_id: int = Field(..., alias="certifications_id")
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True,
+                    "populate_by_name": True}
 
     @field_validator("year")
     @classmethod
@@ -80,10 +81,10 @@ class MovieListItemSchema(BaseModel):
     gross: Optional[float] = None
     description: str
     price: decimal.Decimal
-    certification_id: int
-
+    certification_id: int = Field(..., alias="certifications_id")
     model_config = {
         "from_attributes": True,
+        "populate_by_name": True
     }
 
 

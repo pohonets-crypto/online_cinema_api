@@ -173,6 +173,10 @@ class MovieModel(Base):
         UniqueConstraint("name", "year", "time", name="uq_movie_name_year_time"),
     )
 
+    @property
+    def certification_id(self) -> int:
+        return self.certifications_id
+
     @classmethod
     def default_order_by(cls):
         return (cls.year.desc(),)
