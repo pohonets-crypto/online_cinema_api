@@ -1,7 +1,7 @@
 from online_cinema.exceptions.security import (
     BaseSecurityError,
     InvalidTokenError,
-    TokenExpiredError
+    TokenExpiredError,
 )
 from online_cinema.exceptions.email import BaseEmailError
 from online_cinema.exceptions.storage import (
@@ -10,5 +10,5 @@ from online_cinema.exceptions.storage import (
     S3BucketNotFoundError,
     S3FileUploadError,
     S3FileNotFoundError,
-    S3PermissionError
+    S3PermissionError,
 )

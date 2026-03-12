@@ -2,6 +2,7 @@ import os
 
 from fastapi import Depends
 
+from online_cinema.config.mock_email_sender import MockEmailSender
 from online_cinema.config.settings import TestingSettings, Settings, BaseAppSettings
 from online_cinema.notifications import EmailSenderInterface, EmailSender
 from online_cinema.security.interfaces import JWTAuthManagerInterface
@@ -16,18 +17,23 @@ def get_settings() -> BaseAppSettings:
     return Settings()
 
 
-def get_jwt_auth_manager(settings: BaseAppSettings = Depends(get_settings)) -> JWTAuthManagerInterface:
+def get_jwt_auth_manager(
+    settings: BaseAppSettings = Depends(get_settings),
+) -> JWTAuthManagerInterface:
 
     return JWTAuthManager(
         secret_key_access=settings.SECRET_KEY_ACCESS,
         secret_key_refresh=settings.SECRET_KEY_REFRESH,
-        algorithm=settings.JWT_SIGNING_ALGORITHM
+        algorithm=settings.JWT_SIGNING_ALGORITHM,
     )
 
 
 def get_accounts_email_notificator(
-    settings: BaseAppSettings = Depends(get_settings)
+    settings: BaseAppSettings = Depends(get_settings),
 ) -> EmailSenderInterface:
+    environment = os.getenv("ENVIRONMENT", "developing")
+    if environment != "production":
+        return MockEmailSender()
 
     return EmailSender(
         hostname=settings.EMAIL_HOST,
@@ -39,5 +45,5 @@ def get_accounts_email_notificator(
         activation_email_template_name=settings.ACTIVATION_EMAIL_TEMPLATE_NAME,
         activation_complete_email_template_name=settings.ACTIVATION_COMPLETE_EMAIL_TEMPLATE_NAME,
         password_email_template_name=settings.PASSWORD_RESET_TEMPLATE_NAME,
-        password_complete_email_template_name=settings.PASSWORD_RESET_COMPLETE_TEMPLATE_NAME
+        password_complete_email_template_name=settings.PASSWORD_RESET_COMPLETE_TEMPLATE_NAME,
     )

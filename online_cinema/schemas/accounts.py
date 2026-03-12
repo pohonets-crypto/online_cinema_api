@@ -7,14 +7,13 @@ class BaseEmailPasswordSchema(BaseModel):
     email: EmailStr
     password: str
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}
 
     @field_validator("email")
     @classmethod
     def validate_email(cls, value):
-        return value.lower()
+        normalized_email = value.lower()
+        return accounts_validators.validate_email(normalized_email)
 
     @field_validator("password")
     @classmethod
@@ -28,6 +27,11 @@ class UserRegistrationRequestSchema(BaseEmailPasswordSchema):
 
 class PasswordResetRequestSchema(BaseModel):
     email: EmailStr
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value):
+        return value.lower()
 
 
 class PasswordResetCompleteRequestSchema(BaseEmailPasswordSchema):
@@ -48,14 +52,17 @@ class UserRegistrationResponseSchema(BaseModel):
     id: int
     email: EmailStr
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}
 
 
 class UserActivationRequestSchema(BaseModel):
     email: EmailStr
     token: str
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value):
+        return value.lower()
 
 
 class MessageResponseSchema(BaseModel):

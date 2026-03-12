@@ -1,2 +1,2 @@
-from notifications.interfaces import EmailSenderInterface
-from notifications.emails import EmailSender
+from online_cinema.notifications.interfaces import EmailSenderInterface
+from online_cinema.notifications.emails import EmailSender

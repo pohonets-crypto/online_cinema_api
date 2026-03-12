@@ -46,16 +46,15 @@ class MovieBaseSchema(BaseModel):
     price: decimal.Decimal = Field(...)
     certification_id: int = Field(...)
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}
 
     @field_validator("year")
     @classmethod
     def validate_year(cls, value: int):
         current_year = datetime.now().year
         if value > current_year + 1:
-            raise ValueError(f"The year cannot be greater than {current_year + 1}.")
+            raise ValueError(f"The year cannot be greater than "
+                             f"{current_year + 1}.")
         return value
 
 

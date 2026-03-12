@@ -3,7 +3,7 @@ from online_cinema.schemas.movies import (
     MovieListResponseSchema,
     MovieListItemSchema,
     MovieCreateSchema,
-    MovieUpdateSchema
+    MovieUpdateSchema,
 )
 from online_cinema.schemas.accounts import (
     UserRegistrationRequestSchema,
@@ -15,5 +15,5 @@ from online_cinema.schemas.accounts import (
     UserLoginResponseSchema,
     UserLoginRequestSchema,
     TokenRefreshRequestSchema,
-    TokenRefreshResponseSchema
+    TokenRefreshResponseSchema,
 )
